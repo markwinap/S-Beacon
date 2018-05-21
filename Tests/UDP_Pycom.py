@@ -21,7 +21,7 @@ def sendudp(data):
     sock.close()
 def netConnect():
     print("Connecting")
-    wlan.connect('INFINITUM3736_2.4', auth=(WLAN.WPA2, 'Maxpayne32'), timeout=3000)
+    wlan.connect('SSID', auth=(WLAN.WPA2, 'Password'), timeout=3000)
     time.sleep(4)
 netConnect()
 bluetooth.start_scan(-1)
