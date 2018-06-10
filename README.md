@@ -139,6 +139,9 @@ while bluetooth.isscanning():
 
  - Create Python Class
 
+### Usefull Links
+https://www.bluetooth.com/specifications/assigned-numbers/generic-access-profile
+
 License
 ----
 
