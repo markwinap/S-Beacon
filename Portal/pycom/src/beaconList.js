@@ -112,10 +112,10 @@ class SecondAction extends React.Component {
     this.handleToggle = this.handleToggle.bind(this);
   }
   handleToggle = value => () => {
-    const test = {beacon: this.state.beacon, muted : !this.state.isToggleOn, threshold: 60000, zones:["30aea4500ec4"]};
+    const test = {beacon: this.state.beacon, muted : !this.state.isToggleOn};
     axios({
       method: 'post',
-      url: 'http://192.168.1.71:3000/update',
+      url: 'http://172.20.10.9:3000/update',
       headers: {'Content-Type': 'application/json'},
       data: JSON.stringify(test)
     })

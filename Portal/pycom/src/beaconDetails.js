@@ -21,6 +21,8 @@ import Card from "@material-ui/core/Card";
 import CardContent from "@material-ui/core/CardContent";
 import Button from '@material-ui/core/Button';
 import CardActions from "@material-ui/core/CardActions";
+import SnackbarContent from '@material-ui/core/SnackbarContent';
+
 
 
 //Moment
@@ -86,6 +88,7 @@ class BeaconDetails extends React.Component {
     super(props);
     //this.callBack = this.callBack.bind(this);
   }
+
   cardInfo(textA, textB){
     const { classes } = this.props;
     return(
