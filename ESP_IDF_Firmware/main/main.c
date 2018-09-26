@@ -10,21 +10,19 @@
 #include "app_eth.h"
 #include "app_ble.h"
 #include "app_ota.h"
-#include "app_http.h"
+#include "app_udp.h"
+
 #include "esp_timer.h"
 
 #include "esp_http_client.h"
 #include "eth_phy/phy_lan8720.h"
 
 #define MAX_HTTP_RECV_BUFFER 512
-//static const char *TAG = "HTTP_CLIENT";
+
 static const char *TAG = "MAIN";
 
 
 static void periodic_timer_callback(void* arg);
-
-
-
 
 void app_main(){
     esp_err_t ret = nvs_flash_init();
@@ -41,7 +39,7 @@ void app_main(){
     esp_timer_handle_t periodic_timer;
     ESP_ERROR_CHECK(esp_timer_create(&periodic_timer_args, &periodic_timer));
 
-    ESP_ERROR_CHECK(esp_timer_start_periodic(periodic_timer, 5000000));//Start Timmer
+    ESP_ERROR_CHECK(esp_timer_start_periodic(periodic_timer, 120000000));//Start Timmer
 
     if(app_eth_initialise() != ESP_OK) {
         ESP_LOGI(TAG, "Error");
@@ -52,7 +50,7 @@ void app_main(){
         for( ;; )
         {
             char str1[12] = "Hello";
-            http_send_request(str1);
+            udp_send_data(str1);
             vTaskDelay( 1000 );
         }
     }    
@@ -61,4 +59,5 @@ void app_main(){
 static void periodic_timer_callback(void* arg){
     int64_t time_since_boot = esp_timer_get_time();
     ESP_LOGI(TAG, "Periodic timer called, time since boot: %lld us", time_since_boot);
+    app_ota_initialise();
 }
