@@ -32,8 +32,7 @@
 
 static const char *TAG = "ETHERNET";
 
-static esp_err_t eth_event_handler(void *ctx, system_event_t *event)
-{
+static esp_err_t eth_event_handler(void *ctx, system_event_t *event){
     switch (event->event_id) {
 		case SYSTEM_EVENT_ETH_CONNECTED:
 			ESP_LOGI(TAG, "Ethernet Link Up");

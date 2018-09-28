@@ -51,7 +51,5 @@ void udp_send_data(uint8_t *data, uint8_t size){
         ESP_LOGI(TAG, "IPV4 sendto failed. errno: %d", errno);
 		close(sock);
     }
-	else{
-		close(sock);
-	}
+	close(sock);
 }
