@@ -18,20 +18,14 @@
 #include "nvs.h"
 #include "nvs_flash.h"
 
-static const char *TAG = "simple_ota_example";
+
+#define FILE_PATH "https://192.168.1.72/SBEACON-PoE.bin"
+
+static const char *TAG = "OTA";
 extern const uint8_t server_cert_pem_start[] asm("_binary_ca_cert_pem_start");
 extern const uint8_t server_cert_pem_end[] asm("_binary_ca_cert_pem_end");
 
-/* FreeRTOS event group to signal when we are connected & ready to make a request */
-static EventGroupHandle_t wifi_event_group;
-
-/* The event group allows multiple bits for each event,
-   but we only care about one event - are we connected
-   to the AP with an IP? */
-const int CONNECTED_BIT = BIT0;
-
-esp_err_t _http_event_handler(esp_http_client_event_t *evt)
-{
+esp_err_t _http_event_handler(esp_http_client_event_t *evt){
     switch(evt->event_id) {
         case HTTP_EVENT_ERROR:
             ESP_LOGD(TAG, "HTTP_EVENT_ERROR");
@@ -58,19 +52,10 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt)
     return ESP_OK;
 }
 
-
-void simple_ota_example_task(void * pvParameter)
-{
-    ESP_LOGI(TAG, "Starting OTA example...");
-
-    /* Wait for the callback to set the CONNECTED_BIT in the
-       event group.
-    */
-
-    ESP_LOGI(TAG, "Connect to Wifi ! Start to Connect to Server....");
-    
+void ota_task(void * pvParameter){
+    ESP_LOGI(TAG, "Starting OTA");   
     esp_http_client_config_t config = {
-        .url = "https://192.168.1.72/SBEACON-PoE.bin",
+        .url = FILE_PATH,
         .cert_pem = (char *)server_cert_pem_start,
         .event_handler = _http_event_handler,
     };
@@ -78,22 +63,19 @@ void simple_ota_example_task(void * pvParameter)
     if (ret == ESP_OK) {
         esp_restart();
     } else {
-        ESP_LOGE(TAG, "Firmware Upgrades Failed");
+        ESP_LOGE(TAG, "ERROR - OTA FIRMWARE");
     }
     while (1) {
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 }
 
-void app_ota_initialise()
-{
-    // Initialize NVS.
+void app_ota_initialise(){
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES) {
         ESP_ERROR_CHECK(nvs_flash_erase());
         err = nvs_flash_init();
     }
     ESP_ERROR_CHECK( err );
-
-    xTaskCreate(&simple_ota_example_task, "ota_example_task", 8192, NULL, 5, NULL);
+    xTaskCreate(&ota_task, "ota_task", 8192, NULL, 5, NULL);
 }

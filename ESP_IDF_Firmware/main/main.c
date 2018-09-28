@@ -10,21 +10,26 @@
 #include "app_eth.h"
 #include "app_ble.h"
 #include "app_ota.h"
-#include "app_udp.h"
+
 
 #include "esp_timer.h"
 
 #include "esp_http_client.h"
 #include "eth_phy/phy_lan8720.h"
 
-#define MAX_HTTP_RECV_BUFFER 512
 
 static const char *TAG = "MAIN";
+
+#define MAJOR 1
+#define MINOR 0
+#define PATCH 7
 
 
 static void periodic_timer_callback(void* arg);
 
 void app_main(){
+    ESP_LOGI(TAG, "VERSION %d.%d.%d", MAJOR, MINOR, PATCH);
+    //START FLASH
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
       ESP_ERROR_CHECK(nvs_flash_erase());
@@ -34,25 +39,19 @@ void app_main(){
 
     const esp_timer_create_args_t periodic_timer_args = {
             .callback = &periodic_timer_callback,
-            .name = "ota"
+            .name = "OTA"
     };
     esp_timer_handle_t periodic_timer;
     ESP_ERROR_CHECK(esp_timer_create(&periodic_timer_args, &periodic_timer));
-
-    ESP_ERROR_CHECK(esp_timer_start_periodic(periodic_timer, 120000000));//Start Timmer
+    ESP_ERROR_CHECK(esp_timer_start_periodic(periodic_timer, 60000000));//Start Timmer
 
     if(app_eth_initialise() != ESP_OK) {
         ESP_LOGI(TAG, "Error");
     }
     else{
         app_ble_initialise();
-        ESP_LOGI(TAG, "Ethernet Connected");
-        for( ;; )
-        {
-            char str1[12] = "Hello";
-            udp_send_data(str1);
-            vTaskDelay( 1000 );
-        }
+        ble_ibeacon_init();
+        ESP_LOGI(TAG, "Ethernet Connected BLE STARTED");
     }    
 }
 

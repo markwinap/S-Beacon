@@ -16,11 +16,10 @@
 
 #define UDP_PORT 33333
 #define SERVER_IP_ADDR "192.168.1.72"
-#define MY_IP_ADDR "192.168.1.76"
 
 static const char *TAG = "UDP";
 
-void udp_send_data(char *data){
+void udp_send_data(uint8_t *data, uint8_t size){
     
     struct sockaddr_in saddr, raddr;
 	//struct sockaddr_in sa,ra;
@@ -32,13 +31,12 @@ void udp_send_data(char *data){
     sock = socket(PF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
         ESP_LOGI(TAG, "Failed to create socket. Error %d", errno);
-        //return -1;
     }
-
+    //SENSOR BIND
     raddr.sin_family = AF_INET;
     raddr.sin_addr.s_addr = htonl(INADDR_ANY);
     raddr.sin_port = htons(UDP_PORT);
-
+    //SERVER BIND
     saddr.sin_family = AF_INET;//AF_INET
     saddr.sin_port = htons(UDP_PORT);
     saddr.sin_addr.s_addr = inet_addr(SERVER_IP_ADDR);
@@ -47,14 +45,11 @@ void udp_send_data(char *data){
     if (err < 0) {
         ESP_LOGI(TAG, "Failed to bind socket. Error %d", errno);
         close(sock);
-        //return -1;
     }
-
-    err = sendto(sock, data, strlen(data), 0, (struct sockaddr*)&saddr, sizeof(saddr));
+    err = sendto(sock, data, size, 0, (struct sockaddr*)&saddr, sizeof(saddr));
     if (err < 0) {
         ESP_LOGI(TAG, "IPV4 sendto failed. errno: %d", errno);
 		close(sock);
-        //return -1;
     }
 	else{
 		close(sock);
