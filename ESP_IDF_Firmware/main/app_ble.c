@@ -22,6 +22,8 @@
 static const char *TAG = "BLE";
 static uint8_t mac[6];
 
+static TaskHandle_t xHandle = NULL;
+
 //Buffer
 static RingbufHandle_t buf_handle;
 
@@ -38,7 +40,7 @@ static esp_ble_scan_params_t ble_scan_params = {
     .scan_filter_policy     = BLE_SCAN_FILTER_ALLOW_ALL,
     .scan_interval          = 0x640,//N * 0.625 msec MIN 0x0004 MAX 0x4000 - 50 msec
     .scan_window            = 0x640,//N * 0.625 msec MIN 0x0004 MAX 0x4000 - 30 msec
-    .scan_duplicate         = BLE_SCAN_DUPLICATE_DISABLE
+    .scan_duplicate         = BLE_SCAN_DUPLICATE_ENABLE//BLE_SCAN_DUPLICATE_DISABLE
 };
 
 static void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param) {
@@ -133,43 +135,78 @@ static void buff_callback(void* arg){
     }
 }
 
-void ble_ibeacon_appRegister(void){
-    esp_err_t status;
-    ESP_LOGI(TAG, "register callback");
-    //register the scan callback function to the gap module
-    if ((status = esp_ble_gap_register_callback(esp_gap_cb)) != ESP_OK) {
-        ESP_LOGE(TAG, "gap register error: %s", esp_err_to_name(status));
-        return;
-    }
-}
-
 void ble_ibeacon_init(void){
-    esp_err_t ret;
-    ret = esp_bluedroid_init();
-    if (ret) {
-        ESP_LOGE(TAG, "%s init bluetooth failed, error code = %x\n", __func__, ret);
-        return;
-    }
-    ret = esp_bluedroid_enable();
-    if (ret) {
-        ESP_LOGE(TAG, "%s enable bluetooth failed, error code = %x\n", __func__, ret);
-        return;
-    }
-    ble_ibeacon_appRegister();
-    esp_ble_gap_set_scan_params(&ble_scan_params);
-    ESP_LOGI(TAG, "BLE INIT");
-}
-void ble_ibeacon_deinit(void){
-    esp_bluedroid_disable();
-    esp_bluedroid_deinit();
-    ESP_LOGI(TAG, "BLE DEINIT");
-}
+    esp_err_t err;
 
-void app_ble_initialise(){
     //GET MAC
     esp_read_mac(mac, ESP_MAC_ETH);    
     ESP_LOGI(TAG, "[Ethernet] Mac Address = %02X:%02X:%02X:%02X:%02X:%02X\r\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
+    esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
+    err = esp_bt_controller_init(&bt_cfg);
+    if (err) {
+        ESP_LOGE(TAG, "esp_bt_controller_init failed,  %s", esp_err_to_name(err));
+        return;
+    }
+    err = esp_bt_controller_enable(ESP_BT_MODE_BLE);
+    if (err) {
+        ESP_LOGE(TAG, "esp_bt_controller_enable failed, %s", esp_err_to_name(err));
+        return;
+    }
+    err = esp_bluedroid_init();
+    if (err) {
+        ESP_LOGE(TAG, "esp_bluedroid_init failed, %s", esp_err_to_name(err));
+        return;
+    }
+    err = esp_bluedroid_enable();
+    if (err) {
+        ESP_LOGE(TAG, "esp_bluedroid_enable, %s", esp_err_to_name(err));
+        return;
+    }
+    err = esp_ble_gap_register_callback(esp_gap_cb);
+    if (err) {
+        ESP_LOGE(TAG, "esp_ble_gap_register_callback, %s", esp_err_to_name(err));
+        return;
+    }
+    err = esp_ble_gap_set_scan_params(&ble_scan_params);
+    if (err) {
+        ESP_LOGE(TAG, "esp_ble_gap_set_scan_params, %s", esp_err_to_name(err));
+        return;
+    }    
+    ESP_LOGI(TAG, "BLE INIT");
+}
+
+void ble_ibeacon_deinit(void){
+    esp_err_t err;
+    err = esp_ble_gap_stop_scanning();
+    if (err) {
+        ESP_LOGE(TAG, "esp_ble_gap_stop_scanning failed,  %s", esp_err_to_name(err));
+        return;
+    }
+    err = esp_bluedroid_disable();
+    if (err) {
+        ESP_LOGE(TAG, "esp_bluedroid_disable failed,  %s", esp_err_to_name(err));
+        return;
+    }
+    ret = esp_bluedroid_deinit();
+    if (err) {
+        ESP_LOGE(TAG, "esp_bluedroid_deinit failed,  %s", esp_err_to_name(err));
+        return;
+    }
+    err = esp_bt_controller_deinit();
+    if (err) {
+        ESP_LOGE(TAG, "esp_bt_controller_deinit failed,  %s", esp_err_to_name(err));
+        return;
+    }
+    err = esp_bt_controller_disable();
+    if (err) {
+        ESP_LOGE(TAG, "esp_bt_controller_disable failed,  %s", esp_err_to_name(err));
+        return;
+    }
+    ESP_LOGI(TAG, "BLE DEINIT");
+}
+
+void app_ble_initialise(){
     //BUFF STuFFF
     buf_handle = xRingbufferCreate(1028, RINGBUF_TYPE_NOSPLIT);
     if (buf_handle == NULL) {
@@ -180,14 +217,26 @@ void app_ble_initialise(){
     esp_timer_handle_t periodic_timer;
     ESP_ERROR_CHECK(esp_timer_create(&periodic_timer_args, &periodic_timer));
     ESP_ERROR_CHECK(esp_timer_start_periodic(periodic_timer, BUFF_TIMER));
+}
 
-    //BLE STuFFF
-    esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
-    esp_bt_controller_init(&bt_cfg);
-    esp_bt_controller_enable(ESP_BT_MODE_BLE);
-    //Enable Scan
-    
-    
+void coreTask( void * pvParameters ){
+     while(true){
+        size_t item_size;
+        uint8_t *item = (uint8_t *)xRingbufferReceive(buf_handle, &item_size, pdMS_TO_TICKS(1000));
+        if (item != NULL) {
+            udp_send_data(item, item_size);
+            vRingbufferReturnItem(buf_handle, (void *)item);
+        } else {
+            //No Item Received
+            //ESP_LOGI(TAG,"Failed to receive item\n");
+        }
+        vTaskDelay(BUFF_TIMER);
+    } 
+}
+
+void task_buff(void){
+    //xTaskCreate( vTaskCode, "NAME", STACK_SIZE, &ucParameterToPass, tskIDLE_PRIORITY, &xHandle );
+    xTaskCreatePinnedToCore(coreTask, "coreTask", 8192, NULL, 2, &xHandle, 1); 
 }
 /*
 uint8_t * merge(uint8_t *a, uint8_t *d, int i);
