@@ -1,8 +1,7 @@
-/* OTA example
-   This example code is in the Public Domain (or CC0 licensed, at your option.)
-   Unless required by applicable law or agreed to in writing, this
-   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-   CONDITIONS OF ANY KIND, either express or implied.
+/*
+Author: Marco Martinez (927893)
+2018-09-30
+martinez.marco@tcs.com
 */
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -19,11 +18,11 @@
 #include "nvs_flash.h"
 
 
-#define FILE_PATH "https://192.168.1.72/SBEACON-PoE.bin"
-
 static const char *TAG = "OTA";
 extern const uint8_t server_cert_pem_start[] asm("_binary_ca_cert_pem_start");
 extern const uint8_t server_cert_pem_end[] asm("_binary_ca_cert_pem_end");
+
+TaskHandle_t xHandle;
 
 esp_err_t _http_event_handler(esp_http_client_event_t *evt){
     switch(evt->event_id) {
@@ -55,7 +54,7 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt){
 void ota_task(void * pvParameter){
     ESP_LOGI(TAG, "Starting OTA");   
     esp_http_client_config_t config = {
-        .url = FILE_PATH,
+        .url = CONFIG_OTA_URL,
         .cert_pem = (char *)server_cert_pem_start,
         .event_handler = _http_event_handler,
     };
@@ -64,18 +63,20 @@ void ota_task(void * pvParameter){
         esp_restart();
     } else {
         ESP_LOGE(TAG, "ERROR - OTA FIRMWARE");
+        esp_restart();
+        vTaskDelete(xHandle);        
     }
     while (1) {
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 }
 
-void app_ota_initialise(){
+void ota_init(){
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES) {
         ESP_ERROR_CHECK(nvs_flash_erase());
         err = nvs_flash_init();
     }
     ESP_ERROR_CHECK( err );
-    xTaskCreate(&ota_task, "ota_task", 8192, NULL, 5, NULL);
+    xTaskCreate(&ota_task, "ota_task", 8192, NULL, 3, &xHandle);
 }

@@ -5,8 +5,9 @@
 #ifndef _APP_BLE_H_
 #define _APP_BLE_H_
 
-void app_ble_initialise(void);
-void ble_ibeacon_init(void);
-void ble_ibeacon_deinit(void);
+void ble_init(void);
+void ble_deinit(void);
+void ble_mem_release(void);
+void ble_timmer_release(void);
 
 #endif

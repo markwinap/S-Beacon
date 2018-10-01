@@ -1,0 +1,52 @@
+menu "BLE_ESP32_CONFIG"
+
+config VERSION
+    string "MAJOR.MINOR.PATCH"
+    default "1.0.0"
+    help
+        Major, Minor, PATCH release version.
+
+config BROKER_URL
+    string "Broker URL"
+    default "mqtt://192.168.1.64"
+    help
+        URL of the broker to connect to
+
+config OTA_URL
+    string "OTA URL"
+    default "https://192.168.1.72/SBEACON-PoE.bin"
+    help
+        OTA BIN FILE
+
+config UDP_SERVER
+    string "UDP SERVER"
+    default "192.168.1.72"
+    help
+        UDP SERVER
+
+config UDP_PORT
+    int "UDP PORT"
+    default 33333
+    help
+        UDP PORT
+
+config BLE_TIMER
+    int "BLE BUFF TIMMER"
+    default 300000
+    help
+        BLE BUFF TIMMER TICKS
+
+config BLE_INTERVAL
+    hex "BLE INTERVAL"
+    default 0x50
+    help
+        HEX * 0.625 msec MIN 0x0004 MAX 0x4000 - 50 msec
+
+config BLE_WINDOW
+    hex "BLE WINDOW (LOWER THEN INTERVAL)"
+    default 0x30
+    help
+        HEX * 0.625 msec MIN 0x0004 MAX 0x4000 - 50 msec
+
+
+endmenu

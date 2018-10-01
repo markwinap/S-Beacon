@@ -1,3 +1,8 @@
+/*
+Author: Marco Martinez (927893)
+2018-09-30
+martinez.marco@tcs.com
+*/
 #include <stdint.h>
 #include <string.h>
 #include <stdbool.h>
@@ -14,33 +19,38 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/ringbuf.h"
 
+
 //Custom Headers
 #include "app_udp.h"
-
-#define BUFF_TIMER 300000
+#include "app_mqtt.h"
+#include "app_eth.h"
 
 static const char *TAG = "BLE";
-static uint8_t mac[6];
 
-static TaskHandle_t xHandle = NULL;
+//Functions
+void ble_init(void);
+void ble_deinit(void);
+static void buff_callback(void* arg);
+void ble_mem_release(void);
+void ble_timmer_release(void);
 
 //Buffer
 static RingbufHandle_t buf_handle;
 
 //Timmer
-static void buff_callback(void* arg);
+static esp_timer_handle_t periodic_timer;
 static const esp_timer_create_args_t periodic_timer_args = {
         .callback = &buff_callback,
         .name = "BLE_UDP"
 };
-
+//BT Params
 static esp_ble_scan_params_t ble_scan_params = {
     .scan_type              = BLE_SCAN_TYPE_ACTIVE,
     .own_addr_type          = BLE_ADDR_TYPE_PUBLIC,
     .scan_filter_policy     = BLE_SCAN_FILTER_ALLOW_ALL,
-    .scan_interval          = 0x640,//N * 0.625 msec MIN 0x0004 MAX 0x4000 - 50 msec
-    .scan_window            = 0x640,//N * 0.625 msec MIN 0x0004 MAX 0x4000 - 30 msec
-    .scan_duplicate         = BLE_SCAN_DUPLICATE_ENABLE//BLE_SCAN_DUPLICATE_DISABLE
+    .scan_interval          = CONFIG_BLE_INTERVAL,//N * 0.625 msec MIN 0x0004 MAX 0x4000 - 50 msec
+    .scan_window            = CONFIG_BLE_WINDOW,//N * 0.625 msec MIN 0x0004 MAX 0x4000 - 30 msec
+    .scan_duplicate         = BLE_SCAN_DUPLICATE_DISABLE//BLE_SCAN_DUPLICATE_DISABLE//BLE_SCAN_DUPLICATE_ENABLE
 };
 
 static void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param) {
@@ -51,7 +61,8 @@ static void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *par
                 ESP_LOGE(TAG, "Scan stop failed: %s", esp_err_to_name(err));
             }
             else {
-                ESP_LOGI(TAG, "Stop scan successfully");
+                ESP_LOGI(TAG, "Stop successfully");
+                mqtt_publish(getMacString(), "_BLE_STOPED", 0, 1, 0);
             }
             break;
         }
@@ -83,14 +94,10 @@ static void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *par
                     if(scan_result->scan_rst.adv_data_len == 31){
                         //Check if beacon is from fff9 manufacturer
                         if(scan_result->scan_rst.ble_adv[8] == 0xff && scan_result->scan_rst.ble_adv[9] == 0xf9){                            
-                            //Bluevision Beacon
-                            //ESP_LOGI(TAG, "----------sBeacon Found----------");
-                            //esp_log_buffer_hex("IBEACON_DEMO: Device address:", scan_result->scan_rst.bda, ESP_BD_ADDR_LEN );
-                            //ESP_LOGI(TAG, "Data Leng %d ", scan_result->scan_rst.adv_data_len);
-                            //ESP_LOGI(TAG, "RSSI of packet:%d dbm", scan_result->scan_rst.rssi);
-                            //esp_log_buffer_hex( "ble_adv", scan_result->scan_rst.ble_adv, scan_result->scan_rst.adv_data_len);
                             uint8_t payload[30];
                             uint8_t i;
+                            uint8_t *mac;
+                            mac = getMAC();
                             //Fill Payload
                             payload[0] = (scan_result->scan_rst.rssi + 128);
                             for (i = 0; i < 6; i++) {
@@ -99,14 +106,14 @@ static void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *par
                             for (i = 8; i < 31; i++) {
                                 payload[i - 1] = scan_result->scan_rst.ble_adv[i];
                             }
-                            //esp_log_buffer_hex( "PAYLOAD", payload,  sizeof(payload));
-                            //ESP_LOGI(TAG, "PAYLOAD Leng %d ",  sizeof(payload));
-
                             //Add payload to buffer
-                            UBaseType_t res =  xRingbufferSend(buf_handle, payload, sizeof(payload), pdMS_TO_TICKS(1000));
-                            if (res != pdTRUE) {
-                               ESP_LOGE(TAG,"FAILED TO ADD PAYLOAD TO BUFF");
-                            }                            
+                            if(buf_handle != NULL){
+                                UBaseType_t res =  xRingbufferSend(buf_handle, payload, sizeof(payload), pdMS_TO_TICKS(1000));
+                                if (res != pdTRUE) {
+                                ESP_LOGE(TAG,"FAILED TO ADD PAYLOAD TO BUFF");
+                                //ble_ibeacon_deinit();
+                                }
+                            }                         
                         }                        
                     }
                     break;
@@ -123,10 +130,11 @@ static void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *par
     }
 }
 
+
 static void buff_callback(void* arg){
     size_t item_size;
     uint8_t *item = (uint8_t *)xRingbufferReceive(buf_handle, &item_size, pdMS_TO_TICKS(1000));
-    if (item != NULL) {
+    if (item != NULL && buf_handle != NULL) {
         udp_send_data(item, item_size);
         vRingbufferReturnItem(buf_handle, (void *)item);
     } else {
@@ -135,13 +143,25 @@ static void buff_callback(void* arg){
     }
 }
 
-void ble_ibeacon_init(void){
+void ble_init(void){
     esp_err_t err;
-
-    //GET MAC
-    esp_read_mac(mac, ESP_MAC_ETH);    
-    ESP_LOGI(TAG, "[Ethernet] Mac Address = %02X:%02X:%02X:%02X:%02X:%02X\r\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-
+//BUFF
+    buf_handle = xRingbufferCreate(600, RINGBUF_TYPE_NOSPLIT);
+    if (buf_handle == NULL) {
+        ESP_LOGI(TAG, "Failed to create ring buffer\n");
+    }
+//TIMER
+    err = esp_timer_create(&periodic_timer_args, &periodic_timer);
+    if (err) {
+        ESP_LOGE(TAG, "esp_timer_create failed,  %s", esp_err_to_name(err));
+        return;
+    }
+    err = esp_timer_start_periodic(periodic_timer, CONFIG_BLE_TIMER);
+    if (err) {
+        ESP_LOGE(TAG, "esp_timer_start_periodic failed,  %s", esp_err_to_name(err));
+        return;
+    }
+//BT
     esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
     err = esp_bt_controller_init(&bt_cfg);
     if (err) {
@@ -174,9 +194,10 @@ void ble_ibeacon_init(void){
         return;
     }    
     ESP_LOGI(TAG, "BLE INIT");
+    mqtt_publish(getMacString(), "_BLE_INIT", 0, 1, 0);
 }
 
-void ble_ibeacon_deinit(void){
+void ble_deinit(void){
     esp_err_t err;
     err = esp_ble_gap_stop_scanning();
     if (err) {
@@ -188,14 +209,9 @@ void ble_ibeacon_deinit(void){
         ESP_LOGE(TAG, "esp_bluedroid_disable failed,  %s", esp_err_to_name(err));
         return;
     }
-    ret = esp_bluedroid_deinit();
+    err = esp_bluedroid_deinit();
     if (err) {
         ESP_LOGE(TAG, "esp_bluedroid_deinit failed,  %s", esp_err_to_name(err));
-        return;
-    }
-    err = esp_bt_controller_deinit();
-    if (err) {
-        ESP_LOGE(TAG, "esp_bt_controller_deinit failed,  %s", esp_err_to_name(err));
         return;
     }
     err = esp_bt_controller_disable();
@@ -203,50 +219,45 @@ void ble_ibeacon_deinit(void){
         ESP_LOGE(TAG, "esp_bt_controller_disable failed,  %s", esp_err_to_name(err));
         return;
     }
+    err = esp_bt_controller_deinit();
+    if (err) {
+        ESP_LOGE(TAG, "esp_bt_controller_deinit failed,  %s", esp_err_to_name(err));
+        return;
+    }
     ESP_LOGI(TAG, "BLE DEINIT");
 }
-
-void app_ble_initialise(){
-    //BUFF STuFFF
-    buf_handle = xRingbufferCreate(1028, RINGBUF_TYPE_NOSPLIT);
-    if (buf_handle == NULL) {
-        ESP_LOGI(TAG, "Failed to create ring buffer\n");
+void ble_mem_release(void){
+    esp_err_t err;
+    err = esp_bt_mem_release(ESP_BT_MODE_BLE);
+    if (err) {
+        ESP_LOGE(TAG, "esp_bt_mem_release failed,  %s", esp_err_to_name(err));
+        return;
     }
-
-    //TIMER STuFFF
-    esp_timer_handle_t periodic_timer;
-    ESP_ERROR_CHECK(esp_timer_create(&periodic_timer_args, &periodic_timer));
-    ESP_ERROR_CHECK(esp_timer_start_periodic(periodic_timer, BUFF_TIMER));
+    else{
+        mqtt_publish(getMacString(), "_BLE_MEMERELEASE", 0, 1, 0);
+    }
 }
 
-void coreTask( void * pvParameters ){
-     while(true){
-        size_t item_size;
-        uint8_t *item = (uint8_t *)xRingbufferReceive(buf_handle, &item_size, pdMS_TO_TICKS(1000));
-        if (item != NULL) {
-            udp_send_data(item, item_size);
-            vRingbufferReturnItem(buf_handle, (void *)item);
-        } else {
-            //No Item Received
-            //ESP_LOGI(TAG,"Failed to receive item\n");
+void ble_timmer_release(void){
+    esp_err_t err;
+//TIMER
+    err = esp_timer_stop(periodic_timer);
+    if (err) {
+        ESP_LOGE(TAG, "esp_timer_stop failed,  %s", esp_err_to_name(err));
+        return;
+    }
+    else{
+        err = esp_timer_delete(periodic_timer);
+        if (err) {
+            ESP_LOGE(TAG, "esp_timer_delete failed,  %s", esp_err_to_name(err));
+            return;
         }
-        vTaskDelay(BUFF_TIMER);
-    } 
+        else {
+            //BUFF
+            vRingbufferDelete(buf_handle);                        
+            periodic_timer = NULL;
+            buf_handle = NULL;
+            mqtt_publish(getMacString(), "_BLE_TIMERRELEASE", 0, 1, 0);
+        }
+    }
 }
-
-void task_buff(void){
-    //xTaskCreate( vTaskCode, "NAME", STACK_SIZE, &ucParameterToPass, tskIDLE_PRIORITY, &xHandle );
-    xTaskCreatePinnedToCore(coreTask, "coreTask", 8192, NULL, 2, &xHandle, 1); 
-}
-/*
-uint8_t * merge(uint8_t *a, uint8_t *d, int i);
-
-uint8_t * merge(uint8_t *a, uint8_t *d, int i){
-    static uint8_t temp[37];
-    temp[0] = a[0];
-    //size_t n = sizeof(a) / sizeof(uint8_t);
-    //ESP_LOGI(TAG, "ARRAT LEGTH %d", n);
-    return temp;
-
-}
-*/

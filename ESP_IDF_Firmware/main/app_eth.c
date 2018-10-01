@@ -1,3 +1,9 @@
+
+/*
+Author: Marco Martinez (927893)
+2018-09-30
+martinez.marco@tcs.com
+*/
 #include <stdio.h>
 
 #include "freertos/FreeRTOS.h"
@@ -26,11 +32,19 @@
 
 #include "eth_phy/phy_lan8720.h"
 
+
+#include "app_mqtt.h"
+
 #define PIN_SMI_MDC   23
 #define PIN_SMI_MDIO  18
 #define PIN_PHY_POWER 12
 
 static const char *TAG = "ETHERNET";
+
+static uint8_t mac[6];
+static char mac_string[11];
+uint8_t * getMAC(void);
+char * getMacString(void);
 
 static esp_err_t eth_event_handler(void *ctx, system_event_t *event){
     switch (event->event_id) {
@@ -45,6 +59,13 @@ static esp_err_t eth_event_handler(void *ctx, system_event_t *event){
 			break;
 		case SYSTEM_EVENT_ETH_GOT_IP:
 			ESP_LOGI(TAG, "GOT_IP");
+			esp_read_mac(mac, ESP_MAC_ETH);   
+			uint8_t i;
+			for(i=0; i< 6;i++) {
+				sprintf(&mac_string[i*2], "%02X", mac[i]);
+			}
+			ESP_LOGI(TAG, "[Ethernet] Mac Address = %02X:%02X:%02X:%02X:%02X:%02X\r\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+			mqtt_init();
 			break;
 		case SYSTEM_EVENT_ETH_STOP:
 			ESP_LOGI(TAG, "Ethernet Stopped");
@@ -100,4 +121,10 @@ uint8_t app_eth_initialise() {
     }	
 	/* Enable ethernet */
 	return esp_eth_enable();
+}
+uint8_t * getMAC(void){
+	return mac;
+}
+char * getMacString(void){
+	return mac_string;
 }
