@@ -18,7 +18,7 @@ martinez.marco@tcs.com
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/ringbuf.h"
-
+#include "mbedtls/sha256.h"
 
 //Custom Headers
 #include "app_udp.h"
@@ -26,6 +26,8 @@ martinez.marco@tcs.com
 #include "app_eth.h"
 
 static const char *TAG = "BLE";
+const uint8_t key[10] = {0x4d, 0x61, 0x78, 0x70, 0x61, 0x79, 0x6e, 0x65, 0x33, 0x32};
+static void print_hex(const char *title, const unsigned char buf[], size_t len);
 
 //Functions
 void ble_init(void);
@@ -94,22 +96,46 @@ static void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *par
                     if(scan_result->scan_rst.adv_data_len == 31){
                         //Check if beacon is from fff9 manufacturer
                         if(scan_result->scan_rst.ble_adv[8] == 0xff && scan_result->scan_rst.ble_adv[9] == 0xf9){                            
-                            uint8_t payload[30];
+                            uint8_t data[30];
+                            uint8_t dataSalt[40];
+                            uint8_t payload[62];
+                            uint8_t sha[32];
                             uint8_t i;
                             uint8_t *mac;
                             mac = getMAC();
-                            //Fill Payload
-                            payload[0] = (scan_result->scan_rst.rssi + 128);
+                            
+                            //Fill Data
+                            data[0] = (scan_result->scan_rst.rssi + 128);
                             for (i = 0; i < 6; i++) {
-                                payload[i + 1] = mac[i];
+                                data[i + 1] = mac[i];
                             }
                             for (i = 8; i < 31; i++) {
-                                payload[i - 1] = scan_result->scan_rst.ble_adv[i];
+                                data[i - 1] = scan_result->scan_rst.ble_adv[i];
                             }
+                            //Add Salt
+                            for (i = 0; i < 41; i++) {
+                                if(i < 30){
+                                    dataSalt[i] = data[i];
+                                }
+                                else{
+                                    dataSalt[i] = key[i - 30];
+                                }
+                            }
+                            //print_hex("dataSalt ", dataSalt, sizeof dataSalt);           
+                            mbedtls_sha256(dataSalt, 40, sha, 0);
+                            //Merge Data and Sha
+                            for (i = 0; i < 62; i++) {
+                                if(i < 30){
+                                    payload[i] = data[i];
+                                }
+                                else{
+                                    payload[i] = sha[i - 30];
+                                }
+                            }                           
                             //Add payload to buffer
                             if(buf_handle != NULL){
                                 UBaseType_t res =  xRingbufferSend(buf_handle, payload, sizeof(payload), pdMS_TO_TICKS(1000));
-                                if (res != pdTRUE) {
+                                if(res != pdTRUE) {
                                 ESP_LOGE(TAG,"FAILED TO ADD PAYLOAD TO BUFF");
                                 //ble_ibeacon_deinit();
                                 }
@@ -260,4 +286,13 @@ void ble_timmer_release(void){
             mqtt_publish(getMacString(), "_BLE_TIMERRELEASE", 0, 1, 0);
         }
     }
+}
+static void print_hex(const char *title, const unsigned char buf[], size_t len)
+{
+    printf("%s: ", title);
+
+    for (size_t i = 0; i < len; i++)
+        printf("%02x", buf[i]);
+
+    printf("\r\n");
 }
