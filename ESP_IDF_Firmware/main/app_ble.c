@@ -26,7 +26,7 @@ martinez.marco@tcs.com
 #include "app_eth.h"
 
 static const char *TAG = "BLE";
-const uint8_t key[10] = {0x4d, 0x61, 0x78, 0x70, 0x61, 0x79, 0x6e, 0x65, 0x33, 0x32};
+const uint8_t salt[10] = {0x4d, 0x61, 0x78, 0x70, 0x61, 0x79, 0x6e, 0x65, 0x33, 0x32};
 static void print_hex(const char *title, const unsigned char buf[], size_t len);
 
 //Functions
@@ -96,35 +96,31 @@ static void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *par
                     if(scan_result->scan_rst.adv_data_len == 31){
                         //Check if beacon is from fff9 manufacturer
                         if(scan_result->scan_rst.ble_adv[8] == 0xff && scan_result->scan_rst.ble_adv[9] == 0xf9){                            
-                            uint8_t data[30];
-                            uint8_t dataSalt[40];
+                            uint8_t data[40];
                             uint8_t payload[62];
                             uint8_t sha[32];
                             uint8_t i;
                             uint8_t *mac;
                             mac = getMAC();
-                            
-                            //Fill Data
-                            data[0] = (scan_result->scan_rst.rssi + 128);
-                            for (i = 0; i < 6; i++) {
-                                data[i + 1] = mac[i];
-                            }
-                            for (i = 8; i < 31; i++) {
-                                data[i - 1] = scan_result->scan_rst.ble_adv[i];
-                            }
                             //Add Salt
                             for (i = 0; i < 41; i++) {
-                                if(i < 30){
-                                    dataSalt[i] = data[i];
+                                if(i == 0){
+                                    data[i] = (scan_result->scan_rst.rssi + 128);//RSSI - 1 Byte [0]
+                                }
+                                else if(i < 7){
+                                    data[i] = mac[i - 1];//MAC - 6 Bytes [1:6]
+                                }
+                                else if(i < 30){
+                                    data[i] = scan_result->scan_rst.ble_adv[i + 1];//ADV - 23 Bytes [7:30]
                                 }
                                 else{
-                                    dataSalt[i] = key[i - 30];
+                                    data[i] = salt[i - 30];//SALT - 10 Bytes [31 - 40]
                                 }
                             }
-                            //print_hex("dataSalt ", dataSalt, sizeof dataSalt);           
-                            mbedtls_sha256(dataSalt, 40, sha, 0);
+                            //print_hex("dataSalt ", data, sizeof data);           
+                            mbedtls_sha256(data, 40, sha, 0);
                             //Merge Data and Sha
-                            for (i = 0; i < 62; i++) {
+                            for(i = 0; i < 62; i++) {
                                 if(i < 30){
                                     payload[i] = data[i];
                                 }
@@ -136,7 +132,8 @@ static void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *par
                             if(buf_handle != NULL){
                                 UBaseType_t res =  xRingbufferSend(buf_handle, payload, sizeof(payload), pdMS_TO_TICKS(1000));
                                 if(res != pdTRUE) {
-                                ESP_LOGE(TAG,"FAILED TO ADD PAYLOAD TO BUFF");
+                                    ESP_LOGE(TAG,"FAILED TO ADD PAYLOAD TO BUFF");
+                                    esp_restart();
                                 //ble_ibeacon_deinit();
                                 }
                             }                         

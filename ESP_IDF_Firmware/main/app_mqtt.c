@@ -27,6 +27,7 @@ martinez.marco@tcs.com
 #include "app_ota.h"
 
 static const char *TAG = "MQTT";
+static uint8_t counter;
 
 //Functions
 void mqtt_init(void);
@@ -40,11 +41,16 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event){
     switch (event->event_id) {
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
+            ESP_LOGI(TAG, "%s", getMacString());
             mqtt_publish(getMacString(), "_MQTT_OK", 0, 1, 0);
             mqtt_subscribe(getMacString(), 1);
             break;
         case MQTT_EVENT_DISCONNECTED:
             ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
+            if(counter == 3){
+                esp_restart();
+            }
+            counter =  counter + 1;
             break;
         case MQTT_EVENT_SUBSCRIBED:
             ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
@@ -53,7 +59,7 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event){
             ESP_LOGI(TAG, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", event->msg_id);
             break;
         case MQTT_EVENT_PUBLISHED:
-            ESP_LOGI(TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
+            //ESP_LOGI(TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
             break;
         case MQTT_EVENT_DATA:
             ESP_LOGI(TAG, "MQTT_EVENT_DATA");
@@ -78,6 +84,9 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event){
                     break;
                 case 'V'://Version
                     mqtt_publish(getMacString(), CONFIG_VERSION, 0, 1, 0);
+                    break;
+                case 'P'://Get Partition
+                    mqtt_publish(getMacString(), get_partition(), 0, 1, 0);
                     break;
                 case 'r'://mem release
                     ble_mem_release();

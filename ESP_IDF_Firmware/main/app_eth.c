@@ -32,7 +32,6 @@ martinez.marco@tcs.com
 
 #include "eth_phy/phy_lan8720.h"
 
-
 #include "app_mqtt.h"
 
 #define PIN_SMI_MDC   23

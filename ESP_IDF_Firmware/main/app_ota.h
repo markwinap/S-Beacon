@@ -6,5 +6,6 @@
 #define _APP_OTA_H_
 
 void ota_init(void);
+char * get_partition(void);
 
 #endif
